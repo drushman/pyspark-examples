@@ -1,0 +1,210 @@
+version: '2'
+services:
+  adminer:
+    image: adminer
+    restart: always
+    ports:
+      - 8080:8080
+
+  kafka-ui:
+    image: obsidiandynamics/kafdrop
+    ports:
+      - 9000:9000
+    links:
+      - kafka
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BROKERCONNECT=kafka:9092
+      - JVM_OPTS=-Xms32M -Xmx64M
+      - SERVER_SERVLET_CONTEXTPATH=/
+
+  zookeeper:
+    image: debezium/zookeeper:${DEBEZIUM_VERSION}
+    ports:
+      - 2181:2181
+      - 2888:2888
+      - 3888:3888
+
+  kafka:
+    image: debezium/kafka:${DEBEZIUM_VERSION}
+    ports:
+      - 9092:9092
+    links:
+      - zookeeper
+    environment:
+      - ZOOKEEPER_CONNECT=zookeeper:2181
+
+  mysql:
+    image: debezium/example-mysql:${DEBEZIUM_VERSION}
+    ports:
+      - 3306:3306
+    environment:
+      - MYSQL_ROOT_PASSWORD=debezium
+      - MYSQL_USER=mysqluser
+      - MYSQL_PASSWORD=mysqlpw
+    volumes:
+      - './mysqld.cnf:/etc/mysql/mysql.conf.d/mysqld.cnf'
+  connect:
+    image: debezium/connect:${DEBEZIUM_VERSION}
+    ports:
+      - 8083:8083
+    links:
+      - kafka
+      - mysql
+      - schema-registry
+    environment:
+      - BOOTSTRAP_SERVERS=kafka:9092
+      - GROUP_ID=1
+      - CONFIG_STORAGE_TOPIC=my_connect_configs
+      - OFFSET_STORAGE_TOPIC=my_connect_offsets
+      - STATUS_STORAGE_TOPIC=my_connect_statuses
+  #     - INTERNAL_KEY_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+  #     - INTERNAL_VALUE_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+  #     - KEY_CONVERTER=io.confluent.connect.avro.AvroConverter
+  #     - VALUE_CONVERTER=io.confluent.connect.avro.AvroConverter
+  #     - INTERNAL_KEY_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+  #     - INTERNAL_VALUE_CONVERTER=org.apache.kafka.connect.json.JsonConverter
+  #     - CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL=http://schema-registry:8081
+  #     - CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL=http://schema-registry:8081
+
+  schema-registry:
+    image: confluentinc/cp-schema-registry:5.4.1
+    container_name: schema-registry
+    depends_on:
+      - zookeeper
+      - kafka
+    ports:
+      - 8081:8081
+    environment:
+      SCHEMA_REGISTRY_HOST_NAME: schema-registry
+      SCHEMA_REGISTRY_KAFKASTORE_CONNECTION_URL: zookeeper:2181
+
+#  sink:
+#    image: confluentinc/cp-kafka-connect-base:5.4.1
+#    container_name: kafka-connect
+#    depends_on:
+#      - kafka
+#      - connect
+#      - zookeeper
+#      - schema-registry
+#    ports:
+#      - 8084:8084
+#    environment:
+#      CONNECT_BOOTSTRAP_SERVERS: "kafka:9092"
+#      CONNECT_REST_ADVERTISED_HOST_NAME: "kafka-connect"
+#      CONNECT_REST_PORT: 8084
+#      CONNECT_GROUP_ID: kafka-connect
+#      CONNECT_CONFIG_STORAGE_TOPIC: _kafka-connect-configs
+#      CONNECT_OFFSET_STORAGE_TOPIC: _kafka-connect-offsets
+#      CONNECT_STATUS_STORAGE_TOPIC: _kafka-connect-status
+#      CONNECT_KEY_CONVERTER: io.confluent.connect.avro.AvroConverter
+#      CONNECT_KEY_CONVERTER_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
+#      CONNECT_VALUE_CONVERTER: io.confluent.connect.avro.AvroConverter
+#      CONNECT_VALUE_CONVERTER_SCHEMA_REGISTRY_URL: 'http://schema-registry:8081'
+#      CONNECT_INTERNAL_KEY_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+#      CONNECT_INTERNAL_VALUE_CONVERTER: "org.apache.kafka.connect.json.JsonConverter"
+#      CONNECT_LOG4J_ROOT_LOGLEVEL: "INFO"
+#      CONNECT_LOG4J_LOGGERS: "org.apache.kafka.connect.runtime.rest=WARN,org.reflections=ERROR"
+#      CONNECT_CONFIG_STORAGE_REPLICATION_FACTOR: "1"
+#      CONNECT_OFFSET_STORAGE_REPLICATION_FACTOR: "1"
+#      CONNECT_STATUS_STORAGE_REPLICATION_FACTOR: "1"
+#      CONNECT_PLUGIN_PATH: '/usr/share/java,/usr/share/confluent-hub-components/,/connectors/'
+#      # If you want to use the Confluent Hub installer to d/l component, but make them available
+#      # when running this offline, spin up the stack once and then run :
+#      #   docker cp kafka-connect:/usr/share/confluent-hub-components ./connectors
+#      #   mv ./connectors/confluent-hub-components/* ./connectors
+#      #   rm -rf ./connectors/confluent-hub-components
+#    volumes:
+#      - $PWD/connectors:/connectors
+#    # In the command section, $ are replaced with $$ to avoid the error 'Invalid interpolation format for "command" option'
+#    command:
+#      - bash
+#      - -c
+#      - |
+#        echo "Installing connector plugins"
+#        confluent-hub install --no-prompt mdrogalis/voluble:0.2.0
+#        confluent-hub install --no-prompt confluentinc/kafka-connect-jdbc:5.4.1
+#        #
+#        echo "Downloading JDBC driver"
+#        cd /usr/share/confluent-hub-components/confluentinc-kafka-connect-jdbc
+#        curl https://cdn.mysql.com/archives/mysql-connector-java-8.0/mysql-connector-java-8.0.21.tar.gz | tar xz
+#        m
+#        #
+#        echo "Launching Kafka Connect worker"
+#        /etc/confluent/docker/run &
+#        #
+#        sleep infinity
+
+  #  sink:
+  #    image: debezium-jdbc:01
+  #    ports:
+  #     - 8084:8083
+  #    links:
+  #     - kafka
+  #     - mysql
+  #    environment:
+  #     - BOOTSTRAP_SERVERS=kafka:9092
+  #     - GROUP_ID=2
+  #     - CONFIG_STORAGE_TOPIC=my_sink_connect_configs
+  #     - OFFSET_STORAGE_TOPIC=my_sink_connect_offsets
+
+  spark:
+    image: docker.io/bitnami/spark:3.0.2
+    environment:
+      - SPARK_MODE=master
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    ports:
+      - '9090:8080'
+      - '7077:7077'
+    volumes:
+    - "./:/tmp"
+
+  spark-worker-1:
+    image: docker.io/bitnami/spark:3.1.2
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark:7077
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_WORKER_CORES=1
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+
+  spark-worker-2:
+    image: docker.io/bitnami/spark:3.1.2
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark:7077
+      - SPARK_WORKER_MEMORY=1G
+      - SPARK_WORKER_CORES=1
+      - SPARK_RPC_AUTHENTICATION_ENABLED=no
+      - SPARK_RPC_ENCRYPTION_ENABLED=no
+      - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
+      - SPARK_SSL_ENABLED=no
+    volumes:
+    - "./:/tmp/app"
+
+  jupyter:
+    image: jupyter/pyspark-notebook:spark-3.1.2
+    links:
+      - kafka
+      - spark
+    ports:
+    - 8888:8888
+    volumes:
+      - "./:/home/jovyan/app"
+
+#  elastic-search:
+#    image: docker.elastic.co/elasticsearch/elasticsearch:7.13.2
+#    ports:
+#      - 9200:9200
+#    environment:
+#      - discovery.type=single-node
+#      - xpack.security.enabled=false
+#      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+
